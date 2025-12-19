@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "SafeLink Pro Monitor (Batch & UX)",
+  "version": "2.1",
+  "permissions": ["storage", "scripting", "notifications"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://safebrowsing.googleapis.com/*",
+    "https://www.virustotal.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}

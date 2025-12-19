@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="top-row">
+      <span class="logo">🛡️ SafeLink Pro</span>
+      <div class="actions">
+        <button id="refresh-btn" class="btn-icon" title="Reanalisar Página">🔄</button>
+        <button id="export-btn" class="btn-sm">Exportar</button>
+      </div>
+    </div>
+    
+    <div class="manual-box">
+      <input type="text" id="manual-url" placeholder="Verificar URL manualmente...">
+      <button id="check-btn" class="btn">Checar</button>
+    </div>
+    
+    <div class="stats">
+      <div class="stat success-bg">Seguros: <span id="s-count">0</span></div>
+      <div class="stat danger-bg">Ameaças: <span id="d-count">0</span></div>
+    </div>
+  </div>
+  
+  <div id="results" class="results"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
