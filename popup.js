@@ -5,6 +5,7 @@ const inputEl = document.getElementById('manual-url');
 const btnCheck = document.getElementById('check-btn');
 const btnExport = document.getElementById('export-btn');
 const btnRefresh = document.getElementById('refresh-btn');
+const btnClear = document.getElementById('clear-btn'); // Novo botão
 
 // Inicialização: Pega a aba atual
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -29,7 +30,6 @@ function renderUI() {
   container.innerHTML = '';
   
   // FILTRAGEM: Mostra links da aba atual OU verificações manuais (globais)
-  // Agora aceitamos tabId === 'MANUAL' para persistência entre abas
   const tabLinks = allLinks.filter(item => item.tabId === currentTabId || item.tabId === 'MANUAL');
   
   // Remove duplicatas visuais
@@ -38,7 +38,7 @@ function renderUI() {
   let safeCount = 0, dangerCount = 0;
 
   if (uniqueLinks.length === 0) {
-    container.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">Nenhum link encontrado nesta aba.<br><small>Tente clicar no Refresh 🔄 ou verificar manualmente.</small></div>';
+    container.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">Nenhum link encontrado ou lista limpa.<br><small>Use o Refresh 🔄 para escanear novamente.</small></div>';
   }
 
   uniqueLinks.forEach(item => {
@@ -66,7 +66,7 @@ function renderUI() {
     card.appendChild(urlSpan);
     card.appendChild(statusSpan);
 
-    // MUDANÇA: Exibe a fonte SEMPRE
+    // Exibe a fonte sempre
     if (item.source) {
         const sourceDiv = document.createElement('div');
         sourceDiv.style.fontSize = '10px';
@@ -75,10 +75,10 @@ function renderUI() {
         sourceDiv.style.borderTop = '1px solid #eee';
         
         if (item.source.includes("VirusTotal")) {
-             sourceDiv.style.color = '#4f46e5'; // Roxo/Azul do VT
+             sourceDiv.style.color = '#4f46e5'; 
              sourceDiv.style.fontWeight = '600';
         } else {
-             sourceDiv.style.color = '#9ca3af'; // Cinza para Google
+             sourceDiv.style.color = '#9ca3af'; 
         }
 
         sourceDiv.textContent = `Validado por: ${item.source}`;
@@ -92,21 +92,29 @@ function renderUI() {
   document.getElementById('d-count').innerText = dangerCount;
 }
 
-// Botão Refresh: Manda comando para o Content Script da aba atual
+// Botão Refresh
 btnRefresh.addEventListener('click', () => {
   if (currentTabId) {
     const icon = btnRefresh;
     icon.style.transform = "rotate(360deg)";
     icon.style.transition = "transform 0.5s";
     
-    // Limpa UI temporariamente
     document.getElementById('results').innerHTML = '<div style="text-align:center; padding:20px; color:#666;">Reanalisando página...</div>';
     
-    // Envia mensagem para a aba atual
     chrome.tabs.sendMessage(currentTabId, { type: "CMD_REFRESH_SCAN" });
     
     setTimeout(() => { icon.style.transform = "none"; }, 500);
   }
+});
+
+// Botão Limpar (Novo)
+btnClear.addEventListener('click', () => {
+    // 1. Limpa visualmente agora
+    allLinks = [];
+    renderUI();
+
+    // 2. Avisa o background para limpar a memória
+    chrome.runtime.sendMessage({ type: "CLEAR_HISTORY" });
 });
 
 // Checagem Manual
@@ -118,18 +126,15 @@ btnCheck.addEventListener('click', () => {
   btnCheck.disabled = true;
   btnCheck.innerText = '...';
   
-  // Passa tabId, mas o background vai converter para 'MANUAL' para garantir persistência
   chrome.runtime.sendMessage({ type: "CHECK_URL", url: formattedUrl, tabId: currentTabId }, (response) => {
     btnCheck.disabled = false;
     btnCheck.innerText = 'Checar';
     inputEl.value = '';
-    // A resposta virá via onMessage/loadData automaticamente
   });
 });
 
 // Exportar
 btnExport.addEventListener('click', () => {
-  // Exporta o que estiver visível na tela (incluindo manuais)
   const tabLinks = allLinks.filter(item => item.tabId === currentTabId || item.tabId === 'MANUAL');
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tabLinks, null, 2));
   const dlAnchor = document.createElement('a');

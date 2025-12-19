@@ -1,4 +1,4 @@
-/* background.js (Atualizado - Persistência Manual) */
+/* background.js (Final - Badge por Guia) */
 const GOOGLE_KEY = "AIzaSyDGIpHmo5er3l7Wg5CkeMqSt5cN3dr7Qik"; 
 const VT_KEY = "fa95db1a3ddc7391c98d5891b957be8d267674dd5a4dfebcc4b1b5da4108ddb8"; 
 
@@ -21,14 +21,49 @@ async function saveToCache(key, value) {
   } catch (e) { console.error("Erro cache", e); }
 }
 
+// -- CONTROLE DO BADGE (POR GUIA) --
+function updateTabBadge(tabId, allSessionLinks) {
+  // Ignora se for verificação manual ou tabId inválido
+  if (!tabId || tabId === 'MANUAL') return;
+
+  // Filtra apenas os links que pertencem a esta guia específica
+  const tabLinks = allSessionLinks.filter(l => l.tabId === tabId);
+  const dangerCount = tabLinks.filter(l => !l.safe).length;
+
+  if (dangerCount > 0) {
+    // Define o texto apenas para esta aba (tabId)
+    chrome.action.setBadgeText({ text: dangerCount.toString(), tabId: tabId });
+    chrome.action.setBadgeBackgroundColor({ color: "#ef4444", tabId: tabId });
+  } else {
+    // Limpa o texto apenas para esta aba
+    chrome.action.setBadgeText({ text: "", tabId: tabId });
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.session.set({ sessionScannedLinks: [] });
+  chrome.action.setBadgeText({ text: "" }); // Limpa globalmente ao instalar
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const tabId = request.tabId || (sender.tab ? sender.tab.id : null);
 
-  // Se for checagem manual (CHECK_URL), forçamos uma flag 'isManual'
+  // Limpa histórico e Badges de TODAS as abas
+  if (request.type === "CLEAR_HISTORY") {
+    chrome.storage.session.set({ sessionScannedLinks: [] });
+    chrome.storage.local.set({ lastScannedLinks: [] });
+    
+    // Percorre todas as abas abertas e remove o badge delas
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.action.setBadgeText({ text: "", tabId: tab.id });
+      });
+    });
+
+    try { chrome.runtime.sendMessage({ type: "LINK_UPDATE", links: [] }); } catch(e){}
+    return true;
+  }
+
   if (request.type === "CHECK_URL") {
     processBatchSecurityCheck([request.url], tabId, true).then((results) => {
       saveResultForPopup(results);
@@ -49,13 +84,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function saveResultForPopup(results) {
   let sessionLinks = (await getFromCache('sessionScannedLinks')) || [];
   results.forEach(res => {
-    // Remove duplicatas baseadas na URL e no tabId (agora incluindo o tabId 'MANUAL')
     sessionLinks = sessionLinks.filter(l => !(l.url === res.url && l.tabId === res.tabId));
     sessionLinks.unshift(res);
   });
   sessionLinks = sessionLinks.slice(0, 200);
+  
   await saveToCache('sessionScannedLinks', sessionLinks);
   chrome.storage.local.set({ lastScannedLinks: sessionLinks });
+  
+  // ATUALIZA O BADGE APENAS DA GUIA ATUAL QUE ENVIOU OS DADOS
+  if (results.length > 0) {
+    // Pega o tabId do primeiro resultado (já que o lote vem da mesma aba)
+    const targetTabId = results[0].tabId;
+    
+    // Atualiza o badge se for uma aba válida (não Manual)
+    if (targetTabId && targetTabId !== 'MANUAL') {
+        updateTabBadge(targetTabId, sessionLinks);
+    }
+  }
+
   try { chrome.runtime.sendMessage({ type: "LINK_UPDATE", links: sessionLinks }); } catch(e){}
 }
 
@@ -75,7 +122,6 @@ async function resolveFinalUrl(url) {
   } catch (error) { return url; }
 }
 
-// Adicionado parâmetro 'isManual'
 async function processBatchSecurityCheck(urls, tabId, isManual = false) {
   const uniqueUrls = [...new Set(urls)];
   const results = [];
@@ -85,7 +131,6 @@ async function processBatchSecurityCheck(urls, tabId, isManual = false) {
   for (const url of uniqueUrls) {
     const cachedResult = await getFromCache(`res_${url}`);
     if (cachedResult) {
-      // Se for manual, sobrescrevemos o tabId do cache para 'MANUAL' para garantir visibilidade
       results.push({ 
         ...cachedResult, 
         tabId: isManual ? 'MANUAL' : tabId,
@@ -109,8 +154,10 @@ async function processBatchSecurityCheck(urls, tabId, isManual = false) {
 
   for (const originalUrl of urlsToProcess) {
     const finalUrl = urlMapping.get(originalUrl) || originalUrl;
+    
+    // Detecta se houve redirecionamento
     const isRedirected = originalUrl !== finalUrl;
-    // Verifica se é arquivo suspeito
+    
     const isSuspiciousFile = SUSPICIOUS_EXTS.some(ext => finalUrl.toLowerCase().endsWith(ext));
 
     let result = {
@@ -118,9 +165,8 @@ async function processBatchSecurityCheck(urls, tabId, isManual = false) {
       finalUrl: isRedirected ? finalUrl : null,
       safe: true,
       threatType: null,
-      source: "Google Safe Browsing", // Padrão inicial
+      source: "Google Safe Browsing",
       isSuspiciousFile: isSuspiciousFile,
-      // MUDANÇA IMPORTANTE: Se for manual, usamos um ID fixo 'MANUAL'
       tabId: isManual ? 'MANUAL' : tabId,
       isManual: isManual 
     };
@@ -131,10 +177,9 @@ async function processBatchSecurityCheck(urls, tabId, isManual = false) {
       result.source = "Google Safe Browsing";
       result.threatType = googleMap[finalUrl].threatType;
     } 
-    // 2. VirusTotal (Apenas se for arquivo suspeito OU Checagem Manual)
-    // Se for manual, checamos VT mesmo que não termine em .exe, para dar mais segurança
-    else if ((result.isSuspiciousFile || isManual) && VT_KEY.length > 10) {
-      console.log(`🔍 Analisando no VirusTotal: ${finalUrl}`);
+    // 2. VirusTotal (Redirecionamento, Manual ou Arquivo Suspeito)
+    else if ((result.isSuspiciousFile || isManual || isRedirected) && VT_KEY.length > 10) {
+      console.log(`🔍 Analisando no VirusTotal (Redir ou Suspeito): ${finalUrl}`);
       
       const vtRes = await checkVirusTotal(finalUrl);
       
@@ -175,7 +220,6 @@ async function checkGoogleBatch(urls) {
     const response = await fetch(GOOGLE_API_URL, { method: "POST", body: JSON.stringify(body) });
     const data = await response.json();
     const resultMap = {};
-    // Define a fonte padrão como Google Safe Browsing aqui também
     uniqueFinalUrls.forEach(u => resultMap[u] = { safe: true, source: "Google Safe Browsing" });
 
     if (data.matches) {
