@@ -1,4 +1,4 @@
-/* background.js (Atualizado) */
+/* background.js (Atualizado - Persistência Manual) */
 const GOOGLE_KEY = "AIzaSyDGIpHmo5er3l7Wg5CkeMqSt5cN3dr7Qik"; 
 const VT_KEY = "fa95db1a3ddc7391c98d5891b957be8d267674dd5a4dfebcc4b1b5da4108ddb8"; 
 
@@ -49,6 +49,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 async function saveResultForPopup(results) {
   let sessionLinks = (await getFromCache('sessionScannedLinks')) || [];
   results.forEach(res => {
+    // Remove duplicatas baseadas na URL e no tabId (agora incluindo o tabId 'MANUAL')
     sessionLinks = sessionLinks.filter(l => !(l.url === res.url && l.tabId === res.tabId));
     sessionLinks.unshift(res);
   });
@@ -84,7 +85,12 @@ async function processBatchSecurityCheck(urls, tabId, isManual = false) {
   for (const url of uniqueUrls) {
     const cachedResult = await getFromCache(`res_${url}`);
     if (cachedResult) {
-      results.push({ ...cachedResult, tabId });
+      // Se for manual, sobrescrevemos o tabId do cache para 'MANUAL' para garantir visibilidade
+      results.push({ 
+        ...cachedResult, 
+        tabId: isManual ? 'MANUAL' : tabId,
+        isManual: isManual 
+      });
     } else {
       urlsToProcess.push(url);
     }
@@ -114,7 +120,9 @@ async function processBatchSecurityCheck(urls, tabId, isManual = false) {
       threatType: null,
       source: "Google Safe Browsing", // Padrão inicial
       isSuspiciousFile: isSuspiciousFile,
-      tabId: tabId
+      // MUDANÇA IMPORTANTE: Se for manual, usamos um ID fixo 'MANUAL'
+      tabId: isManual ? 'MANUAL' : tabId,
+      isManual: isManual 
     };
 
     // 1. Google Safe Browsing

@@ -28,17 +28,17 @@ function renderUI() {
   if (!container) return;
   container.innerHTML = '';
   
-  // FILTRAGEM: Mostra apenas links da aba atual OU verificações manuais feitas nela
-  // A propriedade 'tabId' foi adicionada no background.js
-  const tabLinks = allLinks.filter(item => item.tabId === currentTabId);
+  // FILTRAGEM: Mostra links da aba atual OU verificações manuais (globais)
+  // Agora aceitamos tabId === 'MANUAL' para persistência entre abas
+  const tabLinks = allLinks.filter(item => item.tabId === currentTabId || item.tabId === 'MANUAL');
   
-  // Remove duplicatas visuais (embora o background já trate isso, garante UI limpa)
+  // Remove duplicatas visuais
   const uniqueLinks = Array.from(new Map(tabLinks.map(item => [item.url, item])).values());
   
   let safeCount = 0, dangerCount = 0;
 
   if (uniqueLinks.length === 0) {
-    container.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">Nenhum link encontrado nesta aba.<br><small>Tente clicar no Refresh 🔄</small></div>';
+    container.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">Nenhum link encontrado nesta aba.<br><small>Tente clicar no Refresh 🔄 ou verificar manualmente.</small></div>';
   }
 
   uniqueLinks.forEach(item => {
@@ -47,9 +47,16 @@ function renderUI() {
     const card = document.createElement('div');
     card.className = `card ${item.safe ? 'safe' : 'malicious'}`;
     
+    // Header do card com URL
     const urlSpan = document.createElement('span');
     urlSpan.className = 'url-display';
-    urlSpan.textContent = item.url; 
+    
+    // Adiciona tag [MANUAL] se for o caso
+    if (item.tabId === 'MANUAL' || item.isManual) {
+        urlSpan.innerHTML = `<span style="background:#eee; color:#666; padding:1px 4px; border-radius:3px; font-size:9px; margin-right:4px;">MANUAL</span> ${item.url}`;
+    } else {
+        urlSpan.textContent = item.url; 
+    }
 
     const statusSpan = document.createElement('span');
     statusSpan.className = 'status-label';
@@ -59,7 +66,7 @@ function renderUI() {
     card.appendChild(urlSpan);
     card.appendChild(statusSpan);
 
-    // MUDANÇA: Exibe a fonte SEMPRE, não importa se é seguro ou não
+    // MUDANÇA: Exibe a fonte SEMPRE
     if (item.source) {
         const sourceDiv = document.createElement('div');
         sourceDiv.style.fontSize = '10px';
@@ -67,7 +74,6 @@ function renderUI() {
         sourceDiv.style.paddingTop = '4px';
         sourceDiv.style.borderTop = '1px solid #eee';
         
-        // Cor diferente dependendo da fonte para facilitar leitura
         if (item.source.includes("VirusTotal")) {
              sourceDiv.style.color = '#4f46e5'; // Roxo/Azul do VT
              sourceDiv.style.fontWeight = '600';
@@ -112,7 +118,7 @@ btnCheck.addEventListener('click', () => {
   btnCheck.disabled = true;
   btnCheck.innerText = '...';
   
-  // Passa o currentTabId para associar essa checagem manual a esta aba
+  // Passa tabId, mas o background vai converter para 'MANUAL' para garantir persistência
   chrome.runtime.sendMessage({ type: "CHECK_URL", url: formattedUrl, tabId: currentTabId }, (response) => {
     btnCheck.disabled = false;
     btnCheck.innerText = 'Checar';
@@ -123,7 +129,8 @@ btnCheck.addEventListener('click', () => {
 
 // Exportar
 btnExport.addEventListener('click', () => {
-  const tabLinks = allLinks.filter(item => item.tabId === currentTabId);
+  // Exporta o que estiver visível na tela (incluindo manuais)
+  const tabLinks = allLinks.filter(item => item.tabId === currentTabId || item.tabId === 'MANUAL');
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tabLinks, null, 2));
   const dlAnchor = document.createElement('a');
   dlAnchor.setAttribute("href", dataStr);
